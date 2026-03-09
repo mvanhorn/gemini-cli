@@ -4,16 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ToolConfirmationMessage } from './ToolConfirmationMessage.js';
-import type {
-  SerializableConfirmationDetails,
-  ToolCallConfirmationDetails,
-  Config,
+import {
+  type SerializableConfirmationDetails,
+  type ToolCallConfirmationDetails,
+  type Config,
+  ToolConfirmationOutcome,
 } from '@google/gemini-cli-core';
 import { renderWithProviders } from '../../../test-utils/render.js';
 import { createMockSettings } from '../../../test-utils/settings.js';
 import { useToolActions } from '../../contexts/ToolActionsContext.js';
+import { act } from 'react';
 
 vi.mock('../../contexts/ToolActionsContext.js', async (importOriginal) => {
   const actual =
@@ -643,5 +645,126 @@ describe('ToolConfirmationMessage', () => {
     expect(output).toContain('(press Ctrl+O to expand MCP tool details)');
     expect(output).not.toContain('Invocation Arguments:');
     unmount();
+  });
+
+  describe('ESCAPE key behavior', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('should call confirm(Cancel) and reset constrainHeight when ESC is pressed', async () => {
+      const mockConfirm = vi.fn().mockResolvedValue(undefined);
+      const mockSetConstrainHeight = vi.fn();
+      const mockRefreshStatic = vi.fn();
+
+      vi.mocked(useToolActions).mockReturnValue({
+        confirm: mockConfirm,
+        cancel: vi.fn(),
+        isDiffingEnabled: false,
+      });
+
+      const confirmationDetails: SerializableConfirmationDetails = {
+        type: 'info',
+        title: 'Confirm Web Fetch',
+        prompt: 'https://example.com',
+        urls: ['https://example.com'],
+      };
+
+      const { stdin, waitUntilReady, unmount } = renderWithProviders(
+        <ToolConfirmationMessage
+          callId="test-call-id"
+          confirmationDetails={confirmationDetails}
+          config={mockConfig}
+          getPreferredEditor={vi.fn()}
+          availableTerminalHeight={30}
+          terminalWidth={80}
+        />,
+        {
+          uiState: { constrainHeight: false },
+          uiActions: {
+            setConstrainHeight: mockSetConstrainHeight,
+            refreshStatic: mockRefreshStatic,
+          },
+        },
+      );
+      await waitUntilReady();
+
+      // Simulate ESC key
+      stdin.write('\x1b');
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockConfirm).toHaveBeenCalledWith(
+        'test-call-id',
+        ToolConfirmationOutcome.Cancel,
+        undefined,
+      );
+      expect(mockSetConstrainHeight).toHaveBeenCalledWith(true);
+      expect(mockRefreshStatic).toHaveBeenCalled();
+
+      unmount();
+    });
+
+    it('should NOT reset constrainHeight if it is already true when ESC is pressed', async () => {
+      const mockConfirm = vi.fn().mockResolvedValue(undefined);
+      const mockSetConstrainHeight = vi.fn();
+      const mockRefreshStatic = vi.fn();
+
+      vi.mocked(useToolActions).mockReturnValue({
+        confirm: mockConfirm,
+        cancel: vi.fn(),
+        isDiffingEnabled: false,
+      });
+
+      const confirmationDetails: SerializableConfirmationDetails = {
+        type: 'info',
+        title: 'Confirm Web Fetch',
+        prompt: 'https://example.com',
+        urls: ['https://example.com'],
+      };
+
+      const { stdin, waitUntilReady, unmount } = renderWithProviders(
+        <ToolConfirmationMessage
+          callId="test-call-id"
+          confirmationDetails={confirmationDetails}
+          config={mockConfig}
+          getPreferredEditor={vi.fn()}
+          availableTerminalHeight={30}
+          terminalWidth={80}
+        />,
+        {
+          uiState: { constrainHeight: true },
+          uiActions: {
+            setConstrainHeight: mockSetConstrainHeight,
+            refreshStatic: mockRefreshStatic,
+          },
+        },
+      );
+      await waitUntilReady();
+
+      // Simulate ESC key
+      stdin.write('\x1b');
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockConfirm).toHaveBeenCalledWith(
+        'test-call-id',
+        ToolConfirmationOutcome.Cancel,
+        undefined,
+      );
+      expect(mockSetConstrainHeight).not.toHaveBeenCalled();
+      expect(mockRefreshStatic).not.toHaveBeenCalled();
+
+      unmount();
+    });
   });
 });

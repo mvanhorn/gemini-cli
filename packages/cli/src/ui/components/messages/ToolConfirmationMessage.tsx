@@ -5,7 +5,7 @@
  */
 
 import type React from 'react';
-import { useMemo, useCallback, useState } from 'react';
+import { useEffect, useMemo, useCallback, useState } from 'react';
 import { Box, Text } from 'ink';
 import { DiffRenderer } from './DiffRenderer.js';
 import { RenderInline } from '../../utils/InlineMarkdownRenderer.js';
@@ -21,6 +21,8 @@ import {
 import type { RadioSelectItem } from '../shared/RadioButtonSelect.js';
 import { useToolActions } from '../../contexts/ToolActionsContext.js';
 import { RadioButtonSelect } from '../shared/RadioButtonSelect.js';
+import { useUIActions } from '../../contexts/UIActionsContext.js';
+import { useUIState } from '../../contexts/UIStateContext.js';
 import { MaxSizedBox, MINIMUM_MAX_HEIGHT } from '../shared/MaxSizedBox.js';
 import {
   sanitizeForDisplay,
@@ -70,6 +72,8 @@ export const ToolConfirmationMessage: React.FC<
 }) => {
   const keyMatchers = useKeyMatchers();
   const { confirm, isDiffingEnabled } = useToolActions();
+  const uiActions = useUIActions();
+  const { constrainHeight } = useUIState();
   const [mcpDetailsExpansionState, setMcpDetailsExpansionState] = useState<{
     callId: string;
     expanded: boolean;
@@ -77,6 +81,7 @@ export const ToolConfirmationMessage: React.FC<
     callId,
     expanded: false,
   });
+  const [isCancelling, setIsCancelling] = useState(false);
   const isMcpToolDetailsExpanded =
     mcpDetailsExpansionState.callId === callId
       ? mcpDetailsExpansionState.expanded
@@ -179,7 +184,7 @@ export const ToolConfirmationMessage: React.FC<
         return true;
       }
       if (keyMatchers[Command.ESCAPE](key)) {
-        handleConfirm(ToolConfirmationOutcome.Cancel);
+        setIsCancelling(true);
         return true;
       }
       if (keyMatchers[Command.QUIT](key)) {
@@ -191,6 +196,16 @@ export const ToolConfirmationMessage: React.FC<
     },
     { isActive: isFocused, priority: true },
   );
+
+  useEffect(() => {
+    if (isCancelling) {
+      if (!constrainHeight) {
+        uiActions.setConstrainHeight(true);
+        uiActions.refreshStatic();
+      }
+      handleConfirm(ToolConfirmationOutcome.Cancel);
+    }
+  }, [isCancelling, constrainHeight, uiActions, handleConfirm]);
 
   const handleSelect = useCallback(
     (item: ToolConfirmationOutcome) => handleConfirm(item),
